@@ -77,8 +77,9 @@ class plUNET(pl.LightningModule):
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss}
 
-    def training_epoch_end(self, outputs: List[Any]):
-        pass
+    """
+    def on_train_epoch_end(self, outputs: List[Any]):
+        pass"""
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, targets, inputs = self.step(batch)
@@ -107,8 +108,21 @@ class plUNET(pl.LightningModule):
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         return {"loss": loss, "preds": preds.detach().cpu(), "targets": targets.detach().cpu()}
 
-    def test_epoch_end(self, outputs: List[Any]):
-        pass
+    def predict_step(self, batch: Any, batch_idx: int):
+        # x, y = batch
+        x_local = batch['x_local']
+        x = x_local
+
+        x = x.float()
+        # pad x of shape (batch_size, C, 80, 80) to (batch_size, 1, 96, 96)
+        x = torch.nn.functional.pad(x, (8, 8, 8, 8), mode='constant', value=0)
+        features = self.net.encoder(x)
+        decoder_output = self.net.decoder(*features)
+        return decoder_output
+
+    """
+    def on_test_epoch_end(self, outputs: List[Any]):
+        pass"""
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(

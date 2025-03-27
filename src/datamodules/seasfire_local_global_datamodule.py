@@ -175,10 +175,12 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                                                   positional_vars=self.positional_vars, target=self.target,
                                                   oci_vars=self.oci_vars, oci_batches=train_oci_batches,
                                                   oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
+            print(f"Train Dataset Size {len(self.data_train)}")
             self.data_val = BatcherDS_global_local(self.global_ds, val_batches, input_vars=self.input_vars,
                                                 positional_vars=self.positional_vars, target=self.target,
                                                 oci_vars=self.oci_vars, oci_batches=val_oci_batches,
                                                 oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
+            print(f"Val Dataset Size {len(self.data_val)}")
             #
             # # function to filter val_batches based on mode value of gfed_region
             # def filter_by_region(batches, region):
@@ -193,6 +195,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                                                  positional_vars=self.positional_vars, target=self.target,
                                                  oci_vars=self.oci_vars, oci_batches=test_oci_batches,
                                                  oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
+            print(f"Test Dataset Size {len(self.data_test)}")
 
     def train_dataloader(self):
         return DataLoader(

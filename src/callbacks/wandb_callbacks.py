@@ -10,7 +10,8 @@ import seaborn as sns
 import torch
 import wandb
 from pytorch_lightning import Callback, Trainer
-from pytorch_lightning.loggers import LoggerCollection, WandbLogger
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers.logger import Logger
 from pytorch_lightning.utilities import rank_zero_only
 from sklearn.metrics import f1_score, precision_score, recall_score
 import gc
@@ -24,7 +25,7 @@ def get_wandb_logger(trainer: Trainer) -> WandbLogger:
     if isinstance(trainer.logger, WandbLogger):
         return trainer.logger
 
-    if isinstance(trainer.logger, LoggerCollection):
+    if isinstance(trainer.logger, List[Logger]):
         for logger in trainer.logger:
             if isinstance(logger, WandbLogger):
                 return logger
@@ -61,7 +62,7 @@ class LogValPredictionsSegmentation(Callback):
         self.ready = True
 
     def on_validation_batch_end(
-            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=None
     ):
         """Gather data from single batch."""
         if self.ready and len(self.preds) < self.num_samples:

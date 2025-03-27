@@ -29,7 +29,7 @@ def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, target_s
     oci_ds = xr.Dataset()
     for var in oci_vars:
         # resample var to 1 month
-        oci_ds[var] = ds[var].fillna(0).resample(time='1M').mean(dim='time')
+        oci_ds[var] = ds[var].fillna(0).resample(time='1ME').mean(dim='time')
     oci_ds.load()
     ds['oci_pdo'] = ds['oci_pdo'].where(ds['oci_pdo'] > -9).ffill(dim='time')
     ds['oci_epo'] = ds['oci_epo'].where(ds['oci_epo'] > -90).ffill(dim='time')
