@@ -207,13 +207,13 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             persistent_workers=True
         )
 
-    def val_dataloader(self):
+    def val_dataloader(self, shuffle: bool = True):
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=True,
+            shuffle=shuffle,
             persistent_workers=True
         )
 

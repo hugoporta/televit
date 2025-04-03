@@ -53,6 +53,44 @@ def task_wrapper(task_func: Callable) -> Callable:
     return wrap
 
 
+def task_wrapper_logs(task_func: Callable) -> Callable:
+    """Optional decorator that wraps the task function in extra utilities.
+
+    Makes multirun more resistant to failure.
+
+    Utilities:
+    - Calling the `utils.extras()` before the task is started
+    - Calling the `utils.close_loggers()` after the task is finished
+    - Logging the exception if occurs
+    - Logging the task total execution time
+    - Logging the output dir
+    """
+
+    def wrap(cfg: DictConfig):
+
+        # apply extra utilities
+        extras(cfg)
+
+        # execute the task
+        try:
+            start_time = time.time()
+            logs = task_func(cfg=cfg)
+        except Exception as ex:
+            log.exception("")  # save exception to `.log` file
+            raise ex
+        finally:
+            path = Path(cfg.paths.output_dir, "exec_time.log")
+            content = f"'{cfg.task_name}' execution time: {time.time() - start_time} (s)"
+            save_file(path, content)  # save task execution time (even if exception occurs)
+            close_loggers()  # close loggers (even if exception occurs so multirun won't fail)
+
+        log.info(f"Output dir: {cfg.paths.output_dir}")
+
+        return logs
+
+    return wrap
+
+
 def extras(cfg: DictConfig) -> None:
     """Applies optional utilities before the task is started.
 
