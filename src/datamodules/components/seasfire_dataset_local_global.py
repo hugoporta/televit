@@ -43,7 +43,7 @@ def save_dict_to_json(d, path):
 
 def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, log_transform_vars, target_shift,
                              patch_size=(1, 80, 80),
-                             split='train', num_timesteps=-1, stats_dir=None):
+                             split='train', num_timesteps=-1, stats_dir=None, raw_loc=False):
     """
     :param ds: xarray dataset
     :param input_vars: list of input variables
@@ -61,14 +61,17 @@ def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, log_tran
         if target_shift < 0:
             ds[var] = ds[var].shift(time=-target_shift)
     oci_ds = xr.Dataset()
-    for var in oci_vars:
-        # resample var to 1 month
-        oci_ds[var] = ds[var].fillna(0).resample(time='1ME').mean(dim='time')
-    oci_ds.load()
-    ds['oci_pdo'] = ds['oci_pdo'].where(ds['oci_pdo'] > -9).ffill(dim='time')
-    ds['oci_epo'] = ds['oci_epo'].where(ds['oci_epo'] > -90).ffill(dim='time')
-    print('Oceanic indices dataset loaded...')
-    
+    if oci_vars:  # Only process oci_vars if the list is not empty
+        for var in oci_vars:
+            # Resample var to 1 month
+            oci_ds[var] = ds[var].fillna(0).resample(time='1ME').mean(dim='time')
+        oci_ds.load()
+        ds['oci_pdo'] = ds['oci_pdo'].where(ds['oci_pdo'] > -9).ffill(dim='time')
+        ds['oci_epo'] = ds['oci_epo'].where(ds['oci_epo'] > -90).ffill(dim='time')
+        print('Oceanic indices dataset loaded...')
+    else:
+        print('No oceanic indices variables provided. Skipping oci_ds processing.')
+
     flag_mean_calculate = False
     mean_std_dict = {}
     mean_std_dict_path = Path(stats_dir) / f'mean_std_dict_{target_shift}.json'
@@ -83,12 +86,12 @@ def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, log_tran
                 break
     else:
         flag_mean_calculate = True
-    
-    if flag_mean_calculate:
+
+    if flag_mean_calculate and oci_vars:  # Only calculate means for oci_vars if they exist
         for var in oci_vars:
             mean_std_dict[var + '_mean'] = oci_ds[var].mean().values.item(0)
             mean_std_dict[var + '_std'] = oci_ds[var].std().values.item(0)
-    print('Oci means calculated')
+        print('Oci means calculated')
     # print(f'Shifting {target} by {target_shift}')
     # if target_shift < 0:
     #     ds[target] = ds[target].shift(time=target_shift)
@@ -132,6 +135,15 @@ def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, log_tran
     ds['cos_lat'] = ({'latitude': ds.latitude, 'longitude': ds.longitude}, np.cos(lat * np.pi / 180))
     ds['sin_lon'] = ({'latitude': ds.latitude, 'longitude': ds.longitude}, np.sin(lon * np.pi / 180))
     ds['sin_lat'] = ({'latitude': ds.latitude, 'longitude': ds.longitude}, np.sin(lat * np.pi / 180))
+
+    if raw_loc:
+        ds['lat'] = ({'latitude': ds.latitude, 'longitude': ds.longitude}, lat)
+        mean_std_dict['lat_mean'] = ds['lat'].mean().values.item(0)
+        mean_std_dict['lat_std'] = ds['lat'].std().values.item(0)
+
+        ds['lon'] = ({'latitude': ds.latitude, 'longitude': ds.longitude}, lon)
+        mean_std_dict['lon_mean'] = ds['lon'].mean().values.item(0)
+        mean_std_dict['lon_std'] = ds['lon'].std().values.item(0)
     # if log_tp:
 
     n_batches = 0
@@ -144,12 +156,14 @@ def sample_dataset_with_ocis(ds, input_vars, oci_vars, oci_lag, target, log_tran
     # for var in input_vars + [target]:
     #     mean_std_dict[var + '_mean'] = ds[var].mean().values.item(0)
     #     mean_std_dict[var + '_std'] = ds[var].std().values.item(0)
+
     for batch in tqdm(bgen):
         if batch.isel(time=-1)[target].sum() > 0:
             batches.append(batch)
             # select oci_ds from lag months before until the batch time
-            oci_batch = oci_ds.sel(time=slice(batch.time[-1] - np.timedelta64(oci_lag * 31, 'D'), batch.time[-1]))
-            oci_batches.append(oci_batch)
+            if oci_vars:  # Only process oci_batches if oci_vars is not empty
+                oci_batch = oci_ds.sel(time=slice(batch.time[-1] - np.timedelta64(oci_lag * 31, 'D'), batch.time[-1]))
+                oci_batches.append(oci_batch)
             n_pos += 1
         #         else:
         #             if not np.isnan(batch.isel(time=-1)['NDVI']).sum()>0:
@@ -165,7 +179,7 @@ class BatcherDS_global_local(Dataset):
     """Dataset from Xbatcher"""
 
     def __init__(self, ds_global, batches, input_vars, positional_vars, oci_batches, oci_vars, oci_lag, target,
-                 mean_std_dict, task='classification', nanfill=-1.):
+                 mean_std_dict, task='classification', nanfill=-1., norm_tp=False, norm_pos=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -187,12 +201,18 @@ class BatcherDS_global_local(Dataset):
         self.std = np.stack([mean_std_dict[f'{var}_std'] for var in input_vars])
         self.ds_global = ds_global
         self.nanfill = nanfill
+        self.norm_tp = norm_tp
+        self.norm_pos = norm_pos
 
     def __len__(self):
         return len(self.batches)
 
     def __getitem__(self, idx):
         def _normalize(x, var, mean_std_dict):
+
+            if self.norm_tp and var == 'tp':
+                return (x - 0.) / mean_std_dict[f'{var}_std'] # In ClimaX they use 0. as mean for tp
+
             return (x - mean_std_dict[f'{var}_mean']) / mean_std_dict[f'{var}_std']
 
         # function to divide by std
@@ -210,7 +230,10 @@ class BatcherDS_global_local(Dataset):
         inputs = inputs.reshape((t * c, h, w))
         # concatenate inputs with pos_vars
         if self.positional_vars:
-            pos_vars = np.stack([batch[var].values for var in self.positional_vars], axis=0)
+            if self.norm_pos:
+                pos_vars = np.stack([_normalize(batch[var], var, self.mean_std_dict) for var in self.positional_vars], axis=0)
+            else:
+                pos_vars = np.stack([batch[var].values for var in self.positional_vars], axis=0)
             inputs = np.concatenate([inputs, pos_vars], axis=0).astype(np.float32)
 
         if self.ds_global:
@@ -226,8 +249,11 @@ class BatcherDS_global_local(Dataset):
             global_target = 0.    
 
 
-        t_batch = self.oci_batches[idx].isel(time=slice(-self.oci_lag, None))
-        t_inputs = np.stack([_divide_by_std(t_batch[var], var, self.mean_std_dict) for var in self.oci_vars])
+        if self.oci_batches and len(self.oci_batches) > 0:
+            t_batch = self.oci_batches[idx].isel(time=slice(-self.oci_lag, None))
+            t_inputs = np.stack([_divide_by_std(t_batch[var], var, self.mean_std_dict) for var in self.oci_vars])
+        else:
+            t_inputs = np.zeros((len(self.oci_vars), self.oci_lag))  # Default empty array for oci inputs
 
         target = batch.isel(time=-1)[self.target].values
         inputs = np.nan_to_num(inputs, nan=-1)
