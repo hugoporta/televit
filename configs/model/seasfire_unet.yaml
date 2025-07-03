@@ -5,3 +5,4 @@ lr: 0.001
 weight_decay: 0.000001
 loss: 'ce'
 encoder: 'efficientnet-b1'
+pad_eval: False

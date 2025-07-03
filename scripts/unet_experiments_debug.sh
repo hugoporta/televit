@@ -17,7 +17,7 @@ do
   python televit/src/train.py target_shift=${target_shift} \
   datamodule.debug=${debug} trainer.max_epochs=${max_epochs} \
   datamodule.batch_size=${batch_size} logger=wandb \
-  logger.wandb.name="${experiment}_shift_${target_shift}_$(date +%Y%m%d-%H%M%S)"
+  logger.wandb.name="${experiment}_shift_${target_shift}_$(date +%Y%m%d-%H%M%S)" \
   model.loss=ce model.encoder="efficientnet-b1" experiment=unet \
   #callbacks.model_checkpoint.dirpath="${experiment}_shift_${target_shift}_$(date +%Y%m%d-%H%M%S)"
 done

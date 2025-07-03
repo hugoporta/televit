@@ -13,7 +13,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from .components.seasfire_dataset_local_global import BatcherDS_global_local, sample_dataset_with_ocis, load_global_ds
+from datamodules.components.seasfire_dataset_local_global import BatcherDS_global_local, sample_dataset_with_ocis, load_global_ds
 import os
 from pathlib import Path
 
@@ -71,7 +71,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             ds_path_global: str = None,
             input_vars: list = None,
             positional_vars: list = None,
-            oci_vars: list = [],
+            oci_vars: list = None,
             oci_lag: int = 10,
             log_transform_vars: list = None,
             target: str = 'BurntArea',
@@ -82,9 +82,6 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             pin_memory: bool = False,
             debug: bool = False,
             stats_dir: str = os.getcwd() + '/stats',
-            raw_loc: bool = False,
-            norm_tp: bool = False,
-            norm_pos: bool = False,
     ):
         super().__init__()
 
@@ -100,8 +97,8 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
         self.ds_path = ds_path
         self.ds_path_global = ds_path_global
         self.input_vars = list(input_vars)
-        self.oci_vars = list(oci_vars) if oci_vars is not None else []
-        self.oci_lag = oci_lag if oci_lag is not None else 10
+        self.oci_vars = list(oci_vars)
+        self.oci_lag = oci_lag
         self.target = target
         self.target_shift = target_shift
         self.ds = xr.open_zarr(ds_path, consolidated=True)
@@ -117,9 +114,6 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
         self.stats_dir = stats_dir
-        self.raw_loc = raw_loc
-        self.norm_tp = norm_tp
-        self.norm_pos = norm_pos
 
     def setup(self, stage: Optional[str] = None):
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -151,13 +145,11 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                                                                                             split='train',
                                                                                             num_timesteps=self.num_timesteps,
                                                                                             patch_size=self.patch_size, 
-                                                                                            stats_dir=self.stats_dir, raw_loc=self.raw_loc)
+                                                                                            stats_dir=self.stats_dir)
             # Save mean std dict for normalization during inference time
             # print(self.mean_std_dict)
             if not (Path(self.stats_dir) / f'mean_std_dict_{self.target_shift}.json').exists():
-                Path(self.stats_dir).mkdir(parents=True, exist_ok=True)
-                with open(Path(self.stats_dir) / f'mean_std_dict_{self.target_shift}.json', 'w') as f:
-                    print("Writting", self.mean_std_dict)
+                with open(f'mean_std_dict_{self.target_shift}.json', 'w') as f:
                     f.write(json.dumps(self.mean_std_dict))
 
 
@@ -168,7 +160,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                                                                        target_shift=-self.target_shift, split='val',
                                                                        num_timesteps=self.num_timesteps,
                                                                        patch_size=self.patch_size,
-                                                                       stats_dir=self.stats_dir, raw_loc=self.raw_loc)
+                                                                       stats_dir=self.stats_dir)
 
             test_batches, test_oci_batches, _ = sample_dataset_with_ocis(self.ds.copy(), input_vars=self.input_vars,
                                                                          log_transform_vars=self.log_transform_vars,
@@ -177,17 +169,17 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                                                                          target_shift=-self.target_shift, split='test',
                                                                          num_timesteps=self.num_timesteps,
                                                                          patch_size=self.patch_size,
-                                                                         stats_dir=self.stats_dir, raw_loc=self.raw_loc)
+                                                                         stats_dir=self.stats_dir)
 
             self.data_train = BatcherDS_global_local(self.global_ds, train_batches, input_vars=self.input_vars,
                                                   positional_vars=self.positional_vars, target=self.target,
                                                   oci_vars=self.oci_vars, oci_batches=train_oci_batches,
-                                                  oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict, norm_tp=self.norm_tp, norm_pos=self.norm_pos)
+                                                  oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
             print(f"Train Dataset Size {len(self.data_train)}")
             self.data_val = BatcherDS_global_local(self.global_ds, val_batches, input_vars=self.input_vars,
                                                 positional_vars=self.positional_vars, target=self.target,
                                                 oci_vars=self.oci_vars, oci_batches=val_oci_batches,
-                                                oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict, norm_tp=self.norm_tp, norm_pos=self.norm_pos)
+                                                oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
             print(f"Val Dataset Size {len(self.data_val)}")
             #
             # # function to filter val_batches based on mode value of gfed_region
@@ -202,7 +194,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             self.data_test = BatcherDS_global_local(self.global_ds, test_batches, input_vars=self.input_vars,
                                                  positional_vars=self.positional_vars, target=self.target,
                                                  oci_vars=self.oci_vars, oci_batches=test_oci_batches,
-                                                 oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict, norm_tp=self.norm_tp, norm_pos=self.norm_pos)
+                                                 oci_lag=self.oci_lag, mean_std_dict=self.mean_std_dict)
             print(f"Test Dataset Size {len(self.data_test)}")
 
     def train_dataloader(self):
@@ -215,13 +207,13 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             persistent_workers=True
         )
 
-    def val_dataloader(self, shuffle: bool = True):
+    def val_dataloader(self):
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
-            shuffle=shuffle,
+            shuffle=True,
             persistent_workers=True
         )
 

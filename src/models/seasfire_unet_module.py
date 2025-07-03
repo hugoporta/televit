@@ -17,7 +17,8 @@ class plUNET(pl.LightningModule):
             lr: float = 0.001,
             weight_decay: float = 0.0005,
             loss='dice',
-            encoder='efficientnet-b5'
+            encoder='efficientnet-b5',
+            pad_eval: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters(logger=False)
@@ -32,6 +33,7 @@ class plUNET(pl.LightningModule):
         self.test_auc = AUROC(pos_label=1, num_classes=2, compute_on_cpu=True)
         self.test_auprc = AveragePrecision(pos_label=1, num_classes=1, compute_on_cpu=True)
         self.test_f1 = F1Score()
+        self.pad_eval = pad_eval
 
     def forward(self, x: torch.Tensor):
         return self.net(x)
@@ -57,7 +59,7 @@ class plUNET(pl.LightningModule):
             print(f'y_global shape: {y_global.shape}')
 
         x = x.float()
-        # pad x of shape (batch_size, C, 80, 80) to (batch_size, 1, 96, 96)
+        # pad x of shape (batch_size, C, 80, 80) to (batch_size, C, 96, 96)
         x = torch.nn.functional.pad(x, (8, 8, 8, 8), mode='constant', value=0)
 
         # pad y of shape (batch_size, 80, 80) to (batch_size, 96, 96)
@@ -69,6 +71,12 @@ class plUNET(pl.LightningModule):
         logits = self.forward(x)
         loss = self.criterion(logits, y)
         preds = torch.nn.functional.softmax(logits, dim=1)[:, 1]
+
+        # For proper evaluation
+        if not self.pad_eval:
+            preds = preds[:, 8:-8, 8:-8]
+            y = y[:, 8:-8, 8:-8]
+
         return loss, preds, y, x
 
     def training_step(self, batch: Any, batch_idx: int):

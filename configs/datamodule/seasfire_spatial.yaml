@@ -16,3 +16,4 @@ patch_size: ${patch_size}
 num_workers: 8
 pin_memory: True
 debug: False
+raw_loc: True

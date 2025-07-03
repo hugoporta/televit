@@ -1,4 +1,5 @@
 import pyrootutils
+import torch
 
 root = pyrootutils.setup_root(
     search_from=__file__,
@@ -64,6 +65,19 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)
 
+    # Load checkpoint and inspect missing/unexpected keys
+    log.info("Loading checkpoint...")
+    checkpoint = torch.load(cfg.ckpt_path, map_location="cpu")  # Load the checkpoint file
+    state_dict = checkpoint["state_dict"]  # Extract the state dictionary
+
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    if missing_keys:
+        log.warning(f"Missing keys in the model: {missing_keys}")
+    if unexpected_keys:
+        log.warning(f"Unexpected keys in the checkpoint: {unexpected_keys}")
+
+    log.info("Checkpoint loaded successfully!")
+
     log.info("Instantiating loggers...")
     logger: List[Logger] = utils.instantiate_loggers(cfg.get("logger"))
 
@@ -83,7 +97,7 @@ def evaluate(cfg: DictConfig) -> Tuple[dict, dict]:
         utils.log_hyperparameters(object_dict)
 
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    trainer.test(model=model, datamodule=datamodule)
 
     # for predictions use trainer.predict(...)
     # predictions = trainer.predict(model=model, dataloaders=dataloaders, ckpt_path=cfg.ckpt_path)

@@ -10,7 +10,7 @@ defaults:
   - override /trainer: default.yaml
 
 
-positional_vars : []
+# positional_vars : []
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
