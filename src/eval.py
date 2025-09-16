@@ -38,7 +38,7 @@ from omegaconf import DictConfig
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers.logger import Logger
 
-from src import utils
+import utils
 
 log = utils.get_pylogger(__name__)
 

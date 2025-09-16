@@ -179,7 +179,7 @@ class BatcherDS_global_local(Dataset):
     """Dataset from Xbatcher"""
 
     def __init__(self, ds_global, batches, input_vars, positional_vars, oci_batches, oci_vars, oci_lag, target,
-                 mean_std_dict, task='classification', nanfill=-1., norm_tp=False, norm_pos=False):
+                 mean_std_dict, task='classification', nanfill=-1., norm_tp=False, norm_pos=False, mode_int=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -203,6 +203,7 @@ class BatcherDS_global_local(Dataset):
         self.nanfill = nanfill
         self.norm_tp = norm_tp
         self.norm_pos = norm_pos
+        self.mode_int = mode_int
 
     def __len__(self):
         return len(self.batches)
@@ -263,6 +264,27 @@ class BatcherDS_global_local(Dataset):
         if self.task == 'classification':
             target = np.where(target > 0, 1, 0)
             global_target = np.where(global_target > 0, 1, 0)
+
+        if self.mode_int:
+            raw_inputs = np.stack([batch[var].values for var in self.input_vars], axis=0)
+            c, t, h, w = raw_inputs.shape
+            raw_inputs = raw_inputs.reshape((t * c, h, w))
+            # concatenate inputs with pos_vars
+            if self.positional_vars:
+                raw_pos_vars = np.stack([batch[var].values for var in self.positional_vars], axis=0)
+                raw_inputs = np.concatenate([raw_inputs, raw_pos_vars], axis=0).astype(np.float32) # NaN postprocessing in white box learning
+
+
+            return {
+                'x_local': inputs,
+                'x_local_mask': mask,
+                'x_oci': t_inputs,
+                'x_global': global_inputs,
+                'y_local': target,
+                'y_global': global_target,
+                'raw_x_local': raw_inputs
+            }
+
 
         return {
             'x_local': inputs,
